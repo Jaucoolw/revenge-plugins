@@ -1,46 +1,30 @@
-import {
-    stylesheet,
-    constants,
-    moment,
-    clipboard,
-    React,
-} from "@vendetta/metro/common";
-
+import { stylesheet, constants, moment, clipboard } from "@vendetta/metro/common";
 import { findByProps } from "@vendetta/metro";
 import { semanticColors } from "@vendetta/ui";
-import {
-    getAssetIDByName,
-} from "@vendetta/ui/assets";
+import { getAssetIDByName } from "@vendetta/ui/assets";
 import { showToast } from "@vendetta/ui/toasts";
 
-const snowflakeUtils = findByProps(
-    "extractTimestamp"
-);
+const { Text } = findByProps("Button", "Text", "View");
 
-const MessageStyles =
-    stylesheet.createThemedStyleSheet({
-        text: {
-            fontSize: 16,
-            color:
-                semanticColors.HEADER_PRIMARY,
-        },
+const snowflakeUtils = findByProps("extractTimestamp");
 
-        bold: {
-            fontFamily:
-                constants.Fonts.PRIMARY_SEMIBOLD,
-        },
+const MessageStyles = stylesheet.createThemedStyleSheet({
+    text: {
+        fontSize: 16,
+        color: semanticColors.HEADER_PRIMARY,
+    },
 
-        highlight: {
-            backgroundColor:
-                semanticColors.BACKGROUND_MESSAGE_HIGHLIGHT_HOVER,
-        },
-    });
+    bold: {
+        fontFamily: constants.Fonts.PRIMARY_SEMIBOLD,
+    },
 
-function FancyDate({
-    date,
-}: {
-    date: Date;
-}) {
+    highlight: {
+        backgroundColor:
+            semanticColors.BACKGROUND_MESSAGE_HIGHLIGHT_HOVER,
+    },
+});
+
+function FancyDate({ date }) {
     return (
         <Text
             onPress={() => {
@@ -50,15 +34,11 @@ function FancyDate({
                 );
             }}
             onLongPress={() => {
-                clipboard.setString(
-                    date.getTime().toString()
-                );
+                clipboard.setString(date.getTime().toString());
 
                 showToast(
                     "Copied Timestamp to Clipboard",
-                    getAssetIDByName(
-                        "ic_message_copy"
-                    )
+                    getAssetIDByName("ic_message_copy")
                 );
             }}
             style={MessageStyles.highlight}
@@ -68,38 +48,7 @@ function FancyDate({
     );
 }
 
-const { Text } = findByProps(
-    "Text",
-    "View"
-);
-
-export default function AlertContent({
-    channel,
-}: {
-    channel: any;
-}) {
-    const creationDate = new Date(
-        snowflakeUtils.extractTimestamp(
-            channel.id
-        )
-    );
-
-    const lastMessageDate =
-        channel.lastMessageId
-            ? new Date(
-                  snowflakeUtils.extractTimestamp(
-                      channel.lastMessageId
-                  )
-              )
-            : null;
-
-    const lastPinDate =
-        channel.lastPinTimestamp
-            ? new Date(
-                  channel.lastPinTimestamp
-              )
-            : null;
-
+export default function AlertContent({ channel }) {
     return (
         <>
             <Text
@@ -112,8 +61,7 @@ export default function AlertContent({
             </Text>
 
             <Text style={MessageStyles.text}>
-                {channel.topic ||
-                    "No topic."}
+                {channel.topic || "No topic."}
             </Text>
 
             <Text
@@ -122,12 +70,17 @@ export default function AlertContent({
                     MessageStyles.bold,
                 ]}
             >
-                {"\n\n"}
-                Creation date:
+                {"\n\n"}Creation date:
             </Text>
 
             <FancyDate
-                date={creationDate}
+                date={
+                    new Date(
+                        snowflakeUtils.extractTimestamp(
+                            channel.id
+                        )
+                    )
+                }
             />
 
             <Text
@@ -136,18 +89,21 @@ export default function AlertContent({
                     MessageStyles.bold,
                 ]}
             >
-                {"\n\n"}
-                Last message:
+                {"\n\n"}Last message:
             </Text>
 
-            {lastMessageDate ? (
+            {channel.lastMessageId ? (
                 <FancyDate
-                    date={lastMessageDate}
+                    date={
+                        new Date(
+                            snowflakeUtils.extractTimestamp(
+                                channel.lastMessageId
+                            )
+                        )
+                    }
                 />
             ) : (
-                <Text
-                    style={MessageStyles.text}
-                >
+                <Text style={MessageStyles.text}>
                     No messages.
                 </Text>
             )}
@@ -158,18 +114,15 @@ export default function AlertContent({
                     MessageStyles.bold,
                 ]}
             >
-                {"\n\n"}
-                Last pin:
+                {"\n\n"}Last pin:
             </Text>
 
-            {lastPinDate ? (
+            {channel.lastPinTimestamp ? (
                 <FancyDate
-                    date={lastPinDate}
+                    date={new Date(channel.lastPinTimestamp)}
                 />
             ) : (
-                <Text
-                    style={MessageStyles.text}
-                >
+                <Text style={MessageStyles.text}>
                     No pins.
                 </Text>
             )}
