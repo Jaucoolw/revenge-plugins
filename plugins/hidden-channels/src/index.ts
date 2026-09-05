@@ -31,9 +31,6 @@ function isHidden(channel: any | undefined) {
         return false;
     }
 
-    /*
-     * Tell our own permission check to use the real permission.
-     */
     channel.realCheck = true;
 
     const result = !Permissions.can(
@@ -46,6 +43,14 @@ function isHidden(channel: any | undefined) {
     return result;
 }
 
+function shouldBypassPermission(permID: any) {
+    return (
+        permID === constants.Permissions.VIEW_CHANNEL ||
+        permID === constants.Permissions.READ_MESSAGE_HISTORY ||
+        permID === constants.Permissions.SEND_MESSAGES
+    );
+}
+
 console.log("[HiddenChannels] Plugin loaded");
 
 const unpatches: (() => void)[] = [];
@@ -56,19 +61,24 @@ export default {
         storage.showPopup ??= true;
 
         /*
-         * Make Discord's normal VIEW_CHANNEL checks pass.
+         * Bypass the client-side permission checks needed to
+         * actually display and use the channel.
          *
-         * This is intentionally NOT applied while isHidden()
-         * is performing the real permission check.
+         * realCheck prevents this hook from interfering with
+         * our own isHidden() check.
          */
         unpatches.push(
             after(
                 "can",
                 Permissions,
                 ([permID, channel], result) => {
+                    if (channel?.realCheck) {
+                        return result;
+                    }
+
                     if (
-                        !channel?.realCheck &&
-                        permID === constants.Permissions.VIEW_CHANNEL
+                        channel &&
+                        shouldBypassPermission(permID)
                     ) {
                         return true;
                     }
@@ -79,11 +89,7 @@ export default {
         );
 
         /*
-         * Navigation handling.
-         *
-         * Hidden channels get the confirmation popup.
-         * "View Anyway" calls Discord's original navigation
-         * function, so the normal channel UI is used.
+         * Intercept navigation to hidden channels.
          */
         const transitionToGuild =
             findByProps("transitionToGuild");
@@ -103,8 +109,7 @@ export default {
                         transitionToGuild,
                         (args, orig) => {
                             if (
-                                typeof args[0] ===
-                                "string"
+                                typeof args[0] === "string"
                             ) {
                                 const pathMatch =
                                     args[0].match(/(\d+)$/);
@@ -114,9 +119,7 @@ export default {
                                         pathMatch[1];
 
                                     const channel =
-                                        getChannel(
-                                            channelId
-                                        );
+                                        getChannel(channelId);
 
                                     if (
                                         channel &&
@@ -147,7 +150,7 @@ export default {
                                                     onConfirm:
                                                         () => {
                                                             console.log(
-                                                                "[HiddenChannels] Allowing navigation to hidden channel:",
+                                                                "[HiddenChannels] Entering hidden channel:",
                                                                 channelId
                                                             );
 
@@ -161,10 +164,6 @@ export default {
                                             return {};
                                         }
 
-                                        /*
-                                         * Popup disabled:
-                                         * just enter normally.
-                                         */
                                         return orig(
                                             ...args
                                         );
@@ -184,7 +183,7 @@ export default {
         }
 
         /*
-         * Lock icon in the channel header.
+         * Add the lock icon to hidden channel headers.
          */
         const ChannelInfo =
             findByName("ChannelInfo", false);
