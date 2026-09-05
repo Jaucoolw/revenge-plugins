@@ -1,6 +1,5 @@
 import { findByProps, findByName } from "@vendetta/metro";
 import { constants, React, ReactNative as RN } from "@vendetta/metro/common";
-import HiddenChannel from "./HiddenChannel";
 import AlertContent from "./AlertContent";
 import { Settings } from "./settings";
 import { getAssetByName } from "@vendetta/ui/assets";
@@ -9,7 +8,6 @@ import { showConfirmationAlert } from "@vendetta/ui/alerts";
 import { storage } from "@vendetta/plugin";
 
 const Permissions = findByProps("getChannelPermissions", "can");
-const Fetcher = findByProps("stores", "fetchMessages");
 
 const { ChannelTypes } = findByProps("ChannelTypes");
 
@@ -33,6 +31,9 @@ function isHidden(channel: any | undefined) {
         return false;
     }
 
+    /*
+     * Tell our own permission check to use the real permission.
+     */
     channel.realCheck = true;
 
     const result = !Permissions.can(
@@ -55,98 +56,125 @@ export default {
         storage.showPopup ??= true;
 
         /*
-         * Make normal client-side VIEW_CHANNEL checks succeed.
-         * isHidden() temporarily sets realCheck so that its own
-         * permission check still gets the real result.
+         * Make Discord's normal VIEW_CHANNEL checks pass.
+         *
+         * This is intentionally NOT applied while isHidden()
+         * is performing the real permission check.
          */
         unpatches.push(
-            after("can", Permissions, ([permID, channel], result) => {
-                if (
-                    !channel?.realCheck &&
-                    permID === constants.Permissions.VIEW_CHANNEL
-                ) {
-                    return true;
-                }
+            after(
+                "can",
+                Permissions,
+                ([permID, channel], result) => {
+                    if (
+                        !channel?.realCheck &&
+                        permID === constants.Permissions.VIEW_CHANNEL
+                    ) {
+                        return true;
+                    }
 
-                return result;
-            })
+                    return result;
+                }
+            )
         );
 
         /*
-         * Don't fetch messages for hidden channels.
-         */
-        if (Fetcher?.fetchMessages) {
-            unpatches.push(
-                instead("fetchMessages", Fetcher, (args, orig) => {
-                    const channel = args[0];
-
-                    if (!isHidden(channel)) {
-                        return orig(...args);
-                    }
-
-                    console.log(
-                        "[HiddenChannels] Blocked message fetch for hidden channel"
-                    );
-
-                    return;
-                })
-            );
-        } else {
-            console.warn(
-                "[HiddenChannels] Fetcher.fetchMessages not found"
-            );
-        }
-
-        /*
-         * Handle navigation to hidden channels.
+         * Navigation handling.
          *
-         * IMPORTANT:
-         * There is intentionally only ONE navigation patch here.
-         * Having another transitionToGuild patch caused
-         * "View Anyway" to navigate into a blank screen.
+         * Hidden channels get the confirmation popup.
+         * "View Anyway" calls Discord's original navigation
+         * function, so the normal channel UI is used.
          */
-        const transitionToGuild = findByProps("transitionToGuild");
+        const transitionToGuild =
+            findByProps("transitionToGuild");
 
         if (transitionToGuild) {
             for (const key of Object.keys(transitionToGuild)) {
-                if (typeof transitionToGuild[key] !== "function") {
+                if (
+                    typeof transitionToGuild[key] !==
+                    "function"
+                ) {
                     continue;
                 }
 
                 unpatches.push(
-                    instead(key, transitionToGuild, (args, orig) => {
-                        if (typeof args[0] === "string") {
-                            const pathMatch = args[0].match(/(\d+)$/);
+                    instead(
+                        key,
+                        transitionToGuild,
+                        (args, orig) => {
+                            if (
+                                typeof args[0] ===
+                                "string"
+                            ) {
+                                const pathMatch =
+                                    args[0].match(/(\d+)$/);
 
-                            if (pathMatch?.[1]) {
-                                const channelId = pathMatch[1];
-                                const channel = getChannel(channelId);
+                                if (pathMatch?.[1]) {
+                                    const channelId =
+                                        pathMatch[1];
 
-                                if (channel && isHidden(channel)) {
-                                    if (storage.showPopup) {
-                                        showConfirmationAlert({
-                                            title: "This channel is hidden.",
-                                            content: React.createElement(
-                                                AlertContent,
-                                                { channel }
-                                            ),
-                                            confirmText: "View Anyway",
-                                            cancelText: "Cancel",
-                                            onConfirm: () => {
-                                                orig(...args);
-                                            },
-                                        });
+                                    const channel =
+                                        getChannel(
+                                            channelId
+                                        );
 
-                                        return {};
+                                    if (
+                                        channel &&
+                                        isHidden(channel)
+                                    ) {
+                                        if (
+                                            storage.showPopup
+                                        ) {
+                                            showConfirmationAlert(
+                                                {
+                                                    title:
+                                                        "This channel is hidden.",
+
+                                                    content:
+                                                        React.createElement(
+                                                            AlertContent,
+                                                            {
+                                                                channel,
+                                                            }
+                                                        ),
+
+                                                    confirmText:
+                                                        "View Anyway",
+
+                                                    cancelText:
+                                                        "Cancel",
+
+                                                    onConfirm:
+                                                        () => {
+                                                            console.log(
+                                                                "[HiddenChannels] Allowing navigation to hidden channel:",
+                                                                channelId
+                                                            );
+
+                                                            orig(
+                                                                ...args
+                                                            );
+                                                        },
+                                                }
+                                            );
+
+                                            return {};
+                                        }
+
+                                        /*
+                                         * Popup disabled:
+                                         * just enter normally.
+                                         */
+                                        return orig(
+                                            ...args
+                                        );
                                     }
-
-                                    return orig(...args);
                                 }
                             }
-                        }
 
-                        return orig(...args);
-                    })
+                            return orig(...args);
+                        }
+                    )
                 );
             }
         } else {
@@ -156,9 +184,10 @@ export default {
         }
 
         /*
-         * Add lock icon to hidden channel headers.
+         * Lock icon in the channel header.
          */
-        const ChannelInfo = findByName("ChannelInfo", false);
+        const ChannelInfo =
+            findByName("ChannelInfo", false);
 
         if (ChannelInfo && storage.showIcon) {
             unpatches.push(
@@ -169,16 +198,23 @@ export default {
                         React.createElement(
                             React.Fragment,
                             {},
-                            channel && isHidden(channel)
-                                ? React.createElement(RN.Image, {
-                                      source:
-                                          getAssetByName("ic_lock").id,
-                                      style: {
-                                          width: 20,
-                                          height: 20,
-                                          marginRight: 4,
-                                      },
-                                  })
+                            channel &&
+                            isHidden(channel)
+                                ? React.createElement(
+                                      RN.Image,
+                                      {
+                                          source:
+                                              getAssetByName(
+                                                  "ic_lock"
+                                              ).id,
+
+                                          style: {
+                                              width: 20,
+                                              height: 20,
+                                              marginRight: 4,
+                                          },
+                                      }
+                                  )
                                 : null,
                             ret
                         )
